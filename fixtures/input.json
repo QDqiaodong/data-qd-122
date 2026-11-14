@@ -1,0 +1,20 @@
+{
+  "payload_root": "payload",
+  "entries": [
+    {
+      "path": "notes.txt",
+      "bytes": 34,
+      "sha256": "fbc31d2d579bf329f5d7485ab0247a860f5c401f1188927726791b6b4667b92d"
+    },
+    {
+      "path": "changed.txt",
+      "bytes": 12,
+      "sha256": "40eda80edfc38b36bdcdc408aa6ff2cc40b708e46ece9dfd2b2801a05a18a5fc"
+    },
+    {
+      "path": "missing.bin",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
