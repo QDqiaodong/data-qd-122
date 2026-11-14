@@ -4,6 +4,7 @@ from .common import read,save,require
 from .files import relative
 from .model import audit
 from .guarded import audit_guarded
+from .restore import restore as run_restore
 
 def run(source,capture_mode='static'):
     if capture_mode not in ('static','guarded'):raise ValueError('capture mode must be static or guarded')
@@ -13,12 +14,12 @@ def run(source,capture_mode='static'):
     if capture_mode=='guarded':report['capture_mode']='guarded'
     return report
 
-def main():
+def _audit_main(argv):
     p=argparse.ArgumentParser(description='Read-only fixity audit of a local archive')
     p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--capture-mode',choices=('static','guarded'),default='static',
                    help='static (default): original contract; guarded: observe a mutable payload tree')
-    a=p.parse_args();report=None
+    a=p.parse_args(argv);report=None
     try:
         if a.source.is_symlink() or a.source.resolve()==a.output.resolve():raise ValueError('unsafe source/output')
         data,digest=read(a.source)
@@ -35,4 +36,23 @@ def main():
     except (ValueError,TypeError,KeyError,OSError,OverflowError,RecursionError) as e:
         print(str(e),file=sys.stderr);return 2
     print(json.dumps(report,sort_keys=True));return 0
+
+def _restore_main(argv):
+    p=argparse.ArgumentParser(description='Restore an archive package from static read-only replicas')
+    p.add_argument('--plan',type=Path,required=True,
+                   help='JSON plan: manifest, ordered replicas, target and state directories')
+    a=p.parse_args(argv)
+    try:
+        summary=run_restore(a.plan)
+    except (ValueError,TypeError,KeyError,OSError,OverflowError,RecursionError) as e:
+        print(str(e),file=sys.stderr);return 2
+    print(json.dumps(summary,sort_keys=True));return 0
+
+def main(argv=None):
+    argv=list(sys.argv[1:] if argv is None else argv)
+    # Subcommand dispatch; the historical flat --source/--output interface is
+    # kept byte-identical when no subcommand is given.
+    if argv and argv[0]=='restore':
+        return _restore_main(argv[1:])
+    return _audit_main(argv)
 if __name__=='__main__':raise SystemExit(main())

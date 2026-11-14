@@ -14,6 +14,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip check
 .venv/bin/archive-fixity --source fixtures/input.json --output run/report.json
 .venv/bin/archive-fixity --source fixtures/input.json --output run/report-guarded.json --capture-mode guarded
+.venv/bin/archive-fixity restore --plan run/restore-plan.json
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
@@ -27,6 +28,17 @@ python3 -m venv .venv
 
 src/archive_fixity/model.py 为业务模型，相关算法模块独立组织；common.py 提供受限JSON及报告发布，
 cli.py 衔接数据链路。fixtures 为明确自制样例，代码与样例采用MIT许可。
+
+## 恢复（restore）
+
+`archive-fixity restore --plan <计划.json>` 从静态只读副本按可信清单重建档案包：
+计划含清单路径、有序副本目录、目标与状态目录，相对路径基于计划目录；目标与状态
+必须在输入树（清单目录与全部副本树）之外且互不包含。按副本顺序选取大小与SHA256
+均匹配的普通文件，缺失/损坏/链接自动换源，无合格来源则失败。全程只在状态目录
+暂存，分块复制并校验写入字节，包内附逐项来源收据；清单SHA、目标与有序副本绑定
+身份，变化拒绝续跑；续跑重验已完文件字节而非信任日志；发布前重验全包，再同盘
+原子改名到不存在的目标，发布未记账的中断可被识别并幂等成功，拒绝覆盖其他目录。
+协议、状态布局、故障点与边界详见 [docs/restore-protocol.md](docs/restore-protocol.md)。
 
 ## 业务与样例结果
 

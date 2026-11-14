@@ -29,4 +29,6 @@ I/O权限、超限或读失败属于执行失败；不把未读文件伪报为ve
 
 fixture3个清单项：notes.txt verified，changed.txt同大小digest_mismatch，missing.bin missing；
 unlisted.txt作为未列项。演示预期inventory_clean=false，这是成功发现差异而非命令失败。
-当前没有修复/回写、基线清单生成、签名链、远端对象存储或定期调度。
+核验命令本身没有修复/回写或基线清单生成；签名链、远端对象存储或定期调度也不在范围内。
+另有独立的 `restore` 子命令从静态只读副本按本清单规则重建档案包（不改写被核验载荷树），
+其计划格式、状态机、崩溃续跑与发布语义见 [restore-protocol.md](restore-protocol.md)。

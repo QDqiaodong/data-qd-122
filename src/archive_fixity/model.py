@@ -3,13 +3,14 @@ import re
 from .common import require,ident,number,rows
 from .files import relative,inspect,inventory
 
-def validate(data,base):
-    """Shared manifest validation for static and guarded capture modes."""
-    require(data,'payload_root entries');relative(data['payload_root']);root=Path(base)
-    for part in data['payload_root'].split('/'):
-        root=root/part
-        if root.is_symlink():raise ValueError('payload root cannot use symlinks')
-    if not root.is_dir():raise ValueError('payload root must exist')
+def validate_entries(data):
+    """Manifest entry rules shared by audits and restore runs.
+
+    Enforces the same path syntax, per-file/overall capacity bounds, digest
+    format and duplicate-path rule regardless of which payload root is used.
+    Returns the ordered entry map keyed by payload path and the expected total.
+    """
+    require(data,'payload_root entries');relative(data['payload_root'])
     expected={};total=0
     for e in rows(data['entries'],2000):
         require(e,'path bytes sha256');name=e['path'];relative(name);size=number(e['bytes'],0,8_000_000)
@@ -17,6 +18,16 @@ def validate(data,base):
         if name in expected:raise ValueError('duplicate manifest payload path')
         expected[name]=e;total+=size
     if total>32_000_000:raise ValueError('manifest payload total exceeds 32 MB')
+    return expected,total
+
+def validate(data,base):
+    """Shared manifest validation for static and guarded capture modes."""
+    expected,total=validate_entries(data)
+    root=Path(base)
+    for part in data['payload_root'].split('/'):
+        root=root/part
+        if root.is_symlink():raise ValueError('payload root cannot use symlinks')
+    if not root.is_dir():raise ValueError('payload root must exist')
     return root,expected,total
 
 def audit(data,base):
