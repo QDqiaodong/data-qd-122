@@ -13,6 +13,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install --no-build-isolation --no-deps .
 .venv/bin/python -m pip check
 .venv/bin/archive-fixity --source fixtures/input.json --output run/report.json
+.venv/bin/archive-fixity --source fixtures/input.json --output run/report-guarded.json --capture-mode guarded
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
@@ -31,3 +32,11 @@ cli.py 衔接数据链路。fixtures 为明确自制样例，代码与样例采�
 
 清单3项：1项verified、1项同大小哈希变更、1项missing，另发现unlisted.txt。
 files.py执行受限字节捕获与无链接遍历，model.py给出差异；只读载荷、不修复。
+
+## 捕获模式
+
+默认`--capture-mode static`保持原静态契约与报告结构不变。
+`--capture-mode guarded`面向清单目录可信、载荷树核验期间可变的场景：锚定根描述符、
+逐段不跟随符号链接、FIFO不阻塞，采集前后全树指纹与每文件读取前后属性/实读长度比对，
+任一观测变化或I/O失败退出2并保留旧报告；成功标明`observed_stable`，仅保证采样点观测。
+一致性边界、失败语义与同步屏障竞态测试见 [docs/guarded-mode.md](docs/guarded-mode.md)。

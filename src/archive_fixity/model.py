@@ -3,20 +3,25 @@ import re
 from .common import require,ident,number,rows
 from .files import relative,inspect,inventory
 
-def audit(data,base):
+def validate(data,base):
+    """Shared manifest validation for static and guarded capture modes."""
     require(data,'payload_root entries');relative(data['payload_root']);root=Path(base)
     for part in data['payload_root'].split('/'):
         root=root/part
         if root.is_symlink():raise ValueError('payload root cannot use symlinks')
     if not root.is_dir():raise ValueError('payload root must exist')
-    expected={};results=[];total=0
+    expected={};total=0
     for e in rows(data['entries'],2000):
         require(e,'path bytes sha256');name=e['path'];relative(name);size=number(e['bytes'],0,8_000_000)
         if not isinstance(e['sha256'],str) or not re.fullmatch('[0-9a-f]{64}',e['sha256']):raise ValueError('expected lowercase SHA256')
         if name in expected:raise ValueError('duplicate manifest payload path')
         expected[name]=e;total+=size
     if total>32_000_000:raise ValueError('manifest payload total exceeds 32 MB')
-    captured=0
+    return root,expected,total
+
+def audit(data,base):
+    root,expected,total=validate(data,base)
+    captured=0;results=[]
     for name,e in sorted(expected.items()):
         actual=inspect(root,name);captured+=actual.get('actual_bytes',0)
         if captured>32_000_000:raise ValueError('captured payload total exceeds 32 MB')
