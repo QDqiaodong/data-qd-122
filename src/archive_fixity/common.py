@@ -18,9 +18,12 @@ def rows(value,limit=20000):
     if not isinstance(value,list) or len(value)>limit:raise ValueError('expected bounded array')
     return value
 
-def read(path):
-    with Path(path).open('rb') as stream:raw=stream.read(8_000_001)
-    if len(raw)>8_000_000:raise ValueError('JSON exceeds 8 MB')
+def loads(raw):
+    """Strict JSON decode used by every on-disk contract.
+
+    Rejects duplicate object keys and non-finite numeric constants so that a
+    document has exactly one meaning regardless of the parser used later.
+    """
     def unique(pairs):
         result={}
         for k,v in pairs:
@@ -28,7 +31,12 @@ def read(path):
             result[k]=v
         return result
     def invalid(v):raise ValueError('nonfinite JSON number: '+v)
-    data=json.loads(raw,object_pairs_hook=unique,parse_constant=invalid)
+    return json.loads(raw,object_pairs_hook=unique,parse_constant=invalid)
+
+def read(path):
+    with Path(path).open('rb') as stream:raw=stream.read(8_000_001)
+    if len(raw)>8_000_000:raise ValueError('JSON exceeds 8 MB')
+    data=loads(raw)
     return data,hashlib.sha256(raw).hexdigest()
 
 def save(path,report):

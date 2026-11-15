@@ -45,6 +45,22 @@ cli.py 衔接数据链路。fixtures 为明确自制样例，代码与样例采�
 清单3项：1项verified、1项同大小哈希变更、1项missing，另发现unlisted.txt。
 files.py执行受限字节捕获与无链接遍历，model.py给出差异；只读载荷、不修复。
 
+## 证据库（evidence store）
+
+`archive-fixity evidence-ingest` 将既有核验报告按“核验事件 + 修订”批量写入 SQLite，
+每批单事务提交并分配递增知识序号；坏行整批回滚，同修订同内容幂等、不同内容拒绝。
+`evidence-query` 按观测截止 T 与知识截止 S 返回**单份整报告**中的路径结论，
+区分无观测 / 未列清单 / 明确 missing，不逐路径拼接历史。
+格式、双截止语义、索引与重试详见 [docs/evidence-store.md](docs/evidence-store.md)；
+规模自检用 `PYTHONPATH=src:tests python3 tests/evidence_benchmark.py --revisions 100000
+--files-per-report 100`（10 万修订/千万文件态，约 97 秒，非单元测试）。
+
+```sh
+.venv/bin/archive-fixity evidence-ingest --db run/evidence.sqlite3 --batch run/revisions.ndjson
+.venv/bin/archive-fixity evidence-query --db run/evidence.sqlite3 --archive arch-01 \
+    --path docs/a.txt --observed-before 2026-01-03T00:00:00Z --knowledge-cutoff 42
+```
+
 ## 捕获模式
 
 默认`--capture-mode static`保持原静态契约与报告结构不变。
