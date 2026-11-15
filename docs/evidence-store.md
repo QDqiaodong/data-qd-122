@@ -1,9 +1,10 @@
-# 证据库（evidence store）v1
+# 证据库（evidence store）v2
 
-`archive-fixity evidence-ingest` / `evidence-query` 把**已有的核验报告**按核验事件归档到本地
-SQLite，并按“观测截止 T + 知识截止 S”回答单个路径在某一时刻的结论。证据库只读报告，
-不重新读取载荷、不修复、不生成清单，也不改变历史核验命令的输入/输出/退出码。
-仅标准库（`sqlite3`、`json`、`zlib` 等），单操作者批处理。
+`archive-fixity evidence-ingest` / `evidence-query` / `evidence-migrate` 把**已有的核验报告**
+按核验事件归档到本地 SQLite，并按“观测截止 T + 知识截止 S”回答单个路径在某一时刻的结论。
+证据库只读报告，不重新读取载荷、不修复、不生成清单，也不改变历史核验命令的输入/输出/退出码。
+v2 把报告体拆成按规范化报告 SHA256 寻址的共享对象；v1 库可只读查询，迁移必须显式执行
+（§5.1）。仅标准库（`sqlite3`、`json`、`zlib` 等），单操作者批处理。
 
 ## 1. 观测、修订与知识序号
 
@@ -80,9 +81,15 @@ SQLite，并按“观测截止 T + 知识截止 S”回答单个路径在某一�
 - `verified` 项必须 `actual_bytes==expected_bytes`、`actual_sha256==expected_sha256`、
   `differences==[]`；`mismatch` 项的 `differences` 必须恰由大小/摘要差异推导。
 
-因此证据库保存的是**原报告**（规范化 JSON，zlib 压缩进单个 `BLOB`）与**摘要**
-（用于查询的 `statuses`、`status_counts`、`file_count`、`unlisted_count`、布尔标志、
-`report_sha256`）。查询返回的整份报告与入库报告在规范化 JSON 意义上逐字节一致。
+因此证据库保存的是**原报告**与**摘要**（用于查询的 `statuses`、`status_counts`、
+`file_count`、`unlisted_count`、布尔标志、`report_sha256`）。查询返回的整份报告与入库
+报告在规范化 JSON 意义上逐字节一致。
+
+v2 起报告体不再随每条修订重复存放：规范化报告的 UTF-8 字节以其 SHA256 寻址，存入共享
+的 `report_objects`，每条修订只保存该摘要与自身摘要行。相同报告跨核验、跨修订只存一份；
+判等依据是**规范化报告字节的 SHA256**，不是压缩后的字节（不同 zlib 参数产生的压缩流仍
+指向同一对象）。撤回不携带报告，因此没有对象。对象与修订在同一事务提交，坏批不会留下
+孤立对象（详见 §5）。
 
 ## 4. 查询语义（双截止）
 
@@ -123,20 +130,50 @@ SQLite，并按“观测截止 T + 知识截止 S”回答单个路径在某一�
 - 新清单移除旧路径：新的整报告不再列出旧路径时，以它为答案的查询返回 `not_listed`，
   不会回退到旧报告中逐路径补出。
 
-## 5. 查询执行与规模
+## 5. 存储布局、查询执行与规模
 
-- 库布局：`revisions`（每修订一行，含知识序号、固定观测时刻、种类、压缩报告 BLOB 与摘要）
-  加上 `verifications` 与 `evidence_meta`。索引：
-  `revisions(verification_id, revision_id)` 支持“S 时点最后修订”判定，
+- 库布局（v2）：`report_objects`（`report_sha256` 主键 + 压缩报告 BLOB + 原始长度，每个
+  不同规范化报告一行）、`revisions`（每修订一行：知识序号、固定观测时刻、种类、报告
+  摘要引用与摘要）、`verifications` 与 `evidence_meta`。`revisions.report_sha256` 是
+  指向 `report_objects` 的可延迟外键（撤回为 `NULL`）。
+- 索引：`revisions(verification_id, revision_id)` 支持“S 时点最后修订”判定，
   `revisions(archive_id, observed_us DESC, verification_id DESC)` 支持按时间选优；
-  `LIMIT 1` 使查询在命中后即停。
-- 查询**不把历史载入 Python**：SQLite 完成筛选，Python 只解压被选中的那**一份**报告；
-  也不会逐路径回放历史。典型查询为毫秒级（10 万修订实测 0.5–26 ms，最旧截止为最坏情况）。
-- 规模实测（`tests/evidence_benchmark.py`，标准库）：10 万修订 × 100 文件 =
-  1000 万文件态，单事务入库约 97 秒，库约 157 MB；查询最坏（最旧截止）约 11 ms，
-  最新截止约 2 ms，不随历史线性增长。
-- 读取使用只读连接（`PRAGMA query_only=ON`），不写库、不留下 WAL 侧文件；写库使用
-  WAL + `synchronous=FULL`，批次事务提交即持久。
+  `report_objects` 的主键即报告摘要，查询时 `JOIN` 命中该行；`LIMIT 1` 使查询在命中后即停。
+- 查询**不把历史载入 Python**：SQLite 完成筛选与对象定位，Python 只解压被选中的那**一份**
+  报告；也不会逐路径回放历史。典型查询为毫秒级，不随历史线性增长。
+- 写入：批次在一个 `BEGIN IMMEDIATE` 事务中先按 `report_sha256` 查/插对象（已存在则不重写），
+  再插修订；两者同事务提交，因此坏批既无修订也无孤立对象，并发读也看不到半批。
+- 规模实测（`tests/evidence_benchmark.py`，标准库，10 万修订 × 100 文件 = 1000 万文件态）：
+  v2 单事务入库约 99 秒、库约 157 MB；查询最新截止约 1–2 ms、最旧截止约 8–10 ms，
+  不随历史线性增长。`--shared` 可验证“全部修订共用同一报告”时对象恒为 1 行。
+- 同一规模的 v1 库（`--mode v1`）：只读查询 1–10 ms，显式迁移约 80 秒，迁移后查询同样为
+  1–10 ms。迁移会删除旧表，腾出的空闲页由 SQLite 保留并复用于后续写入（不自动
+  `VACUUM`；需要收缩时在迁移完成后另行执行）。
+- 读取使用只读连接（`PRAGMA query_only=ON`），不写库、不留下 WAL 侧文件，也不触发迁移；
+  写库使用 WAL + `synchronous=FULL`，批次事务提交即持久。
+
+### 5.1 v1 兼容与显式迁移
+
+v1 库（`revisions.report_z` 每行自带压缩报告）仍可**只读查询**，`evidence-query`
+按版本选择对应 SQL，结果与 v2 完全一致。向 v1 库写入（`evidence-ingest`）会被拒绝并提示
+迁移命令，绝不隐式转换；拒绝发生在切换 journal mode 之前，库文件保持不变。
+
+`archive-fixity evidence-migrate --db <库>` 执行显式的原地迁移：
+
+1. 在**一个** `BEGIN IMMEDIATE` 事务里建临时表、逐条流式读取 v1 报告（不把全库载入
+   Python），按 `report_sha256` 去重写入 `report_objects`；每条报告修订都做**有界解压**并
+   校验原始长度、SHA256 与报告结构/计数约束（同摘要的重复副本也会被逐条校验），
+   任一不符即整迁移拒绝。
+2. 复制全部修订（保留 `revision_id` 知识序号、`(verification_id, revision)` 修订号、
+   `verifications` 身份与全部摘要列），不改写、不按 NDJSON 重放编号；撤回无对象。
+3. 校验无缺失/孤立对象与外键后，删除旧表、改名临时表、重建两个索引，并把
+   `evidence_meta.schema_version` 置为 2。
+4. `sqlite_sequence` 的高水位被保留（且不低于最大 `revision_id`）：即使 v1 的高水位
+   大于最大行号，迁移后新修订仍从正确的高水位续写，不回退、不重号。
+
+任一错误（含末条损坏）都回滚整个事务，原 v1 库保持可用；修复后用同一命令重试即可成功。
+对已是 v2 的库重复执行是幂等空操作（摘要 `migrated:false`）。迁移完成后库切换到 WAL +
+`synchronous=FULL`。
 
 ## 6. 事务失败与重试
 
@@ -150,19 +187,24 @@ SQLite，并按“观测截止 T + 知识截止 S”回答单个路径在某一�
 ## 7. CLI 与退出码
 
 ```sh
-archive-fixity evidence-ingest --db run/evidence.sqlite3 --batch run/revisions.ndjson
-archive-fixity evidence-query  --db run/evidence.sqlite3 --archive arch-01 \
+archive-fixity evidence-ingest  --db run/evidence.sqlite3 --batch run/revisions.ndjson
+archive-fixity evidence-query   --db run/evidence.sqlite3 --archive arch-01 \
     --path docs/a.txt --observed-before 2026-01-03T00:00:00Z --knowledge-cutoff 42
+archive-fixity evidence-migrate --db run/evidence-v1.sqlite3
 ```
 
 - 成功：退出 0，stdout 为单行 JSON（`sort_keys` 排序）。ingest 摘要含 `lines`、`accepted`、
   `idempotent`、首末知识序号、`knowledge_head`；query 结果含 `outcome`、选中核验/修订/
   知识序号、`report_sha256`、完整 `report`、`report_summary`、`observation` 与
-  `unlisted_entry`。
-- 契约失败（坏行、冲突、结构/计数不符、库不是本版本、库/批次/输出路径为符号链接等）：
-  退出 2，stderr 说明原因，库不变。
+  `unlisted_entry`；migrate 摘要含 `migrated`、`from_version`、`revisions`、`objects`、
+  `knowledge_head`。
+- 契约失败（坏行、冲突、结构/计数不符、库不是支持的本版本、v1 库试图写入、迁移校验
+  失败、库/批次/输出路径为符号链接等）：退出 2，stderr 说明原因，原库不变。
 - `--knowledge-cutoff` 必须是已提交的非负序号；超出当前 head 合法（等价于当前 head），
   负数拒绝。
+- `evidence-migrate` 只接受已存在的证据库；不存在的路径与 v2 库的重复调用分别报错 2 与
+  幂等成功（`migrated:false`）。迁移重试参数与 ingest 相同（`--retry-attempts` /
+  `--retry-delay`）。
 - 历史平面命令 `archive-fixity --source ... --output ...` 与 `restore` 子命令保持不变。
 
 ## 8. 测试
@@ -174,13 +216,21 @@ archive-fixity evidence-query  --db run/evidence.sqlite3 --archive arch-01 \
   CLI 在真实载荷树上生成（含 guarded 模式），再经真实子进程 `evidence-ingest` /
   `evidence-query` 验证迟到、更正/撤回/恢复、重复冲突、批末坏行回滚、双截止，
   以及新清单移除旧路径时不回填。
-- `tests/evidence_benchmark.py`：可选的十万修订 / 千万文件态规模自检，不属于单元测试。
+- `tests/test_evidence_v2.py`：共享对象物理去重（同内容不同压缩表示、跨核验/修订）、
+  撤回无对象、坏批/崩溃后无孤立对象；真实 v1 布局上的迁移前/后查询等价（含撤回与更正）、
+  `sqlite_sequence` 高水位续写、重复迁移幂等、v1 只读与写入拒绝提示；注入中断、末条
+  损坏与摘要/长度不符时原 v1 库仍可用且修复后重试成功。
+  `tests/evidence_v1_fixture.py` 逐字构造 v1 表结构与压缩 BLOB。
+- `tests/evidence_benchmark.py`：可选的十万修订 / 千万文件态规模自检，`--mode v1` 可测
+  同规模 v1 库的只读查询与显式迁移，不属于单元测试。
 
 ## 9. 边界
 
 - 证据库不验证报告是否由可信执行者产生；它只保证入库内容结构一致、可按双截止复现。
 - 不提供签名、不可抵赖、跨库复制协议或并发发布；单操作者顺序入库。
 - 查询答案只对已提交的知识序号负责；不得把内存中的未提交状态当成 S。
-- 报告 BLOB 在查询时按记录中的 `report_size` 有界解压，并重算 SHA256；损坏的库会报错
-  而不是返回可疑内容。
+- 报告对象在查询时按记录中的 `report_size` 有界解压，并重算 SHA256；损坏的库会报错
+  而不是返回可疑内容。共享对象损坏会影响所有引用它的修订，这是刻意选择：摘要即身份。
+- 迁移只认已发布的 v1 表结构；其他版本、缺表或列不符一律拒绝，不做“尽力而为”的猜测。
+  迁移期间持有写锁，不提供在线迁移或双写协议。
 - 报告的 `source_sha256` 仍只是调用者提供的参考摘要，证据库不对其含义作额外背书。

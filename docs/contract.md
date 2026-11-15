@@ -32,6 +32,7 @@ unlisted.txt作为未列项。演示预期inventory_clean=false，这是成功�
 核验命令本身没有修复/回写或基线清单生成；签名链、远端对象存储或定期调度也不在范围内。
 另有独立的 `restore` 子命令从静态只读副本按本清单规则重建档案包（不改写被核验载荷树），
 其计划格式、状态机、崩溃续跑与发布语义见 [restore-protocol.md](restore-protocol.md)。
-`evidence-ingest` / `evidence-query` 子命令把**既有报告**按核验事件与修订归档到 SQLite，
-只读报告、按观测截止与知识截止返回单份整报告中的路径结论；NDJSON 格式、双截止语义、
-索引与重试见 [evidence-store.md](evidence-store.md)。
+`evidence-ingest` / `evidence-query` / `evidence-migrate` 子命令把**既有报告**按核验事件与修订
+归档到 SQLite，只读报告、按观测截止与知识截止返回单份整报告中的路径结论；v2 以规范化
+报告 SHA256 共享对象存储报告体，v1 库仅只读查询、写入须显式迁移。NDJSON 格式、双截止语义、
+存储协议、v1→v2 迁移与兼容边界见 [evidence-store.md](evidence-store.md)。

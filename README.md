@@ -51,14 +51,19 @@ files.py执行受限字节捕获与无链接遍历，model.py给出差异；只�
 每批单事务提交并分配递增知识序号；坏行整批回滚，同修订同内容幂等、不同内容拒绝。
 `evidence-query` 按观测截止 T 与知识截止 S 返回**单份整报告**中的路径结论，
 区分无观测 / 未列清单 / 明确 missing，不逐路径拼接历史。
-格式、双截止语义、索引与重试详见 [docs/evidence-store.md](docs/evidence-store.md)；
+v2 将报告体存为按规范化报告 SHA256 寻址的共享对象：相同报告跨核验/修订只存一份，
+撤回不带对象，对象与修订同事务提交。v1 库仍可只读查询；写入 v1 会提示迁移，
+`evidence-migrate` 单事务原地重建、去重并保留修订身份、知识序号与 `sqlite_sequence` 高水位。
+格式、双截止语义、迁移协议与索引详见 [docs/evidence-store.md](docs/evidence-store.md)；
 规模自检用 `PYTHONPATH=src:tests python3 tests/evidence_benchmark.py --revisions 100000
---files-per-report 100`（10 万修订/千万文件态，约 97 秒，非单元测试）。
+--files-per-report 100`（10 万修订/千万文件态，v2 入库约 99 秒，非单元测试；`--mode v1`
+构造同规模 v1 库，实测只读查询与约 80 秒的显式迁移）。
 
 ```sh
-.venv/bin/archive-fixity evidence-ingest --db run/evidence.sqlite3 --batch run/revisions.ndjson
-.venv/bin/archive-fixity evidence-query --db run/evidence.sqlite3 --archive arch-01 \
+.venv/bin/archive-fixity evidence-ingest  --db run/evidence.sqlite3 --batch run/revisions.ndjson
+.venv/bin/archive-fixity evidence-query   --db run/evidence.sqlite3 --archive arch-01 \
     --path docs/a.txt --observed-before 2026-01-03T00:00:00Z --knowledge-cutoff 42
+.venv/bin/archive-fixity evidence-migrate --db run/evidence-v1.sqlite3
 ```
 
 ## 捕获模式

@@ -5,7 +5,7 @@ from .files import relative
 from .model import audit
 from .guarded import audit_guarded
 from .restore import restore as run_restore
-from .evidence import ingest_main,query_main
+from .evidence import ingest_main,query_main,migrate_main
 
 def run(source,capture_mode='static'):
     if capture_mode not in ('static','guarded'):raise ValueError('capture mode must be static or guarded')
@@ -59,5 +59,7 @@ def main(argv=None):
         return ingest_main(argv[1:])
     if argv and argv[0]=='evidence-query':
         return query_main(argv[1:])
+    if argv and argv[0]=='evidence-migrate':
+        return migrate_main(argv[1:])
     return _audit_main(argv)
 if __name__=='__main__':raise SystemExit(main())

@@ -321,7 +321,7 @@ class RetryAndLayoutTests(StoreCase):
         body=report([('a.txt',b'alpha')])
         self.ingest_lines([line('v1',1,iso(10),body)])
         con=sqlite3.connect(self.db);con.execute('PRAGMA query_only=OFF')
-        con.execute('UPDATE revisions SET report_z=? WHERE revision_id=1',(b'not-zlib',))
+        con.execute('UPDATE report_objects SET report_z=?',(b'not-zlib',))
         con.commit();con.close()
         with self.assertRaises(EvidenceError) as cm:
             query(self.db,'archive-1','a.txt',iso(20),10)
