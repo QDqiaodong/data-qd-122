@@ -36,3 +36,6 @@ unlisted.txt作为未列项。演示预期inventory_clean=false，这是成功�
 归档到 SQLite，只读报告、按观测截止与知识截止返回单份整报告中的路径结论；v2 以规范化
 报告 SHA256 共享对象存储报告体，v1 库仅只读查询、写入须显式迁移。NDJSON 格式、双截止语义、
 存储协议、v1→v2 迁移与兼容边界见 [evidence-store.md](evidence-store.md)。
+`bag-import` 子命令把 BagIt 1.0 包只读转换为上述清单格式，校验版本、两套摘要、
+Payload-Oxum 与 tagmanifest 覆盖后原子发布；它不写包内任何文件。格式、失败诊断与
+单遍读取取舍见 [bag-import.md](bag-import.md)。

@@ -6,6 +6,7 @@ from .model import audit
 from .guarded import audit_guarded
 from .restore import restore as run_restore
 from .evidence import ingest_main,query_main,migrate_main
+from .bag import import_bag
 
 def run(source,capture_mode='static'):
     if capture_mode not in ('static','guarded'):raise ValueError('capture mode must be static or guarded')
@@ -49,6 +50,19 @@ def _restore_main(argv):
         print(str(e),file=sys.stderr);return 2
     print(json.dumps(summary,sort_keys=True));return 0
 
+def _bag_import_main(argv):
+    p=argparse.ArgumentParser(prog='archive-fixity bag-import',
+                              description='Convert a BagIt 1.0 bag into an audit manifest; never writes inside the bag')
+    p.add_argument('--bag',type=Path,required=True,help='BagIt 1.0 bag root directory')
+    p.add_argument('--output',type=Path,required=True,
+                   help='manifest path outside the bag; replaced atomically only on success')
+    a=p.parse_args(argv)
+    try:
+        summary=import_bag(a.bag,a.output)
+    except (ValueError,TypeError,KeyError,OSError,OverflowError,RecursionError) as e:
+        print(str(e),file=sys.stderr);return 2
+    print(json.dumps(summary,sort_keys=True));return 0
+
 def main(argv=None):
     argv=list(sys.argv[1:] if argv is None else argv)
     # Subcommand dispatch; the historical flat --source/--output interface is
@@ -61,5 +75,7 @@ def main(argv=None):
         return query_main(argv[1:])
     if argv and argv[0]=='evidence-migrate':
         return migrate_main(argv[1:])
+    if argv and argv[0]=='bag-import':
+        return _bag_import_main(argv[1:])
     return _audit_main(argv)
 if __name__=='__main__':raise SystemExit(main())

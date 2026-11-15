@@ -15,6 +15,7 @@ python3 -m venv .venv
 .venv/bin/archive-fixity --source fixtures/input.json --output run/report.json
 .venv/bin/archive-fixity --source fixtures/input.json --output run/report-guarded.json --capture-mode guarded
 .venv/bin/archive-fixity restore --plan run/restore-plan.json
+.venv/bin/archive-fixity bag-import --bag path/to/bag --output run/manifest.json
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
@@ -65,6 +66,14 @@ v2 将报告体存为按规范化报告 SHA256 寻址的共享对象：相同报
     --path docs/a.txt --observed-before 2026-01-03T00:00:00Z --knowledge-cutoff 42
 .venv/bin/archive-fixity evidence-migrate --db run/evidence-v1.sqlite3
 ```
+
+`archive-fixity bag-import --bag <包目录> --output <清单.json>` 将 BagIt 1.0 包只读转换为
+核验命令可用的审计清单（`payload_root:"data"`）：校验 `bagit.txt` 版本与 UTF-8 声明、
+每个 `manifest-{sha256,sha512}.txt` 与可选 `tagmanifest-{sha256,sha512}.txt` 的摘要与长度、
+`data/` 实际文件集合、`Payload-Oxum` 的字节数/文件数以及 tagmanifest 对全部非 payload
+标签文件的覆盖；拒绝链接、越界/重复路径、缺项、多余项和不支持的算法，诊断带文件与行号。
+全包通过后才原子发布清单并给出目标清单 SHA256 与字节数，失败保留旧清单且不写包内任何
+文件。格式、read-once 取舍与测试矩阵见 [docs/bag-import.md](docs/bag-import.md)。
 
 ## 捕获模式
 
